@@ -9,27 +9,30 @@ from tqdm import tqdm
 import random
 import numpy as np
 
+
 class BoxobanEnv(SokobanEnv):
     num_boxes = 4
-    dim_room=(10, 10)
+    dim_room = (10, 10)
 
     def __init__(self,
-             max_steps=120,
-             difficulty='unfiltered', split='train'):
+                 max_steps=120,
+                 difficulty='unfiltered',
+                 split='train',
+                 reset=True):
         self.difficulty = difficulty
         self.split = split
         self.verbose = False
-        super(BoxobanEnv, self).__init__(self.dim_room, max_steps, self.num_boxes, None)
-        
+        super(BoxobanEnv, self).__init__(self.dim_room, max_steps, self.num_boxes,
+                                         num_gen_steps=None, reset=reset)
 
-    def reset(self):
+    def reset(self, source_file=None, map_idx=None):
         self.cache_path = os.environ.get('SOKOBAN_CACHE_PATH', default='.sokoban_cache')
         self.train_data_dir = os.path.join(self.cache_path, 'boxoban-levels-master', self.difficulty, self.split)
 
         if not os.path.exists(self.cache_path):
-           
+
             url = "https://github.com/deepmind/boxoban-levels/archive/master.zip"
-            
+
             if self.verbose:
                 print('Boxoban: Pregenerated levels not downloaded.')
                 print('Starting download from "{}"'.format(url))
@@ -37,7 +40,8 @@ class BoxobanEnv(SokobanEnv):
             response = requests.get(url, stream=True)
 
             if response.status_code != 200:
-                raise "Could not download levels from {}. If this problem occurs consistantly please report the bug under https://github.com/mpSchrader/gym-sokoban/issues. ".format(url)
+                raise "Could not download levels from {}. If this problem occurs consistantly please report the bug under https://github.com/mpSchrader/gym-sokoban/issues. ".format(
+                    url)
 
             os.makedirs(self.cache_path)
             path_to_zip_file = os.path.join(self.cache_path, 'boxoban_levels-master.zip')
@@ -48,8 +52,8 @@ class BoxobanEnv(SokobanEnv):
             zip_ref = zipfile.ZipFile(path_to_zip_file, 'r')
             zip_ref.extractall(self.cache_path)
             zip_ref.close()
-        
-        self.select_room()
+
+        self.select_room(source_file, map_idx)
 
         self.num_env_steps = 0
         self.reward_last = 0
@@ -59,14 +63,15 @@ class BoxobanEnv(SokobanEnv):
 
         return starting_observation
 
-    def select_room(self):
-        
-        generated_files = [f for f in listdir(self.train_data_dir) if isfile(join(self.train_data_dir, f))]
-        source_file = join(self.train_data_dir, random.choice(generated_files))
+    def select_room(self, source_file=None, map_idx=None):
+
+        if source_file is None:
+            generated_files = [f for f in listdir(self.train_data_dir) if isfile(join(self.train_data_dir, f))]
+            source_file = join(self.train_data_dir, random.choice(generated_files))
 
         maps = []
         current_map = []
-        
+
         with open(source_file, 'r') as sf:
             for line in sf.readlines():
                 if ';' in line and current_map:
@@ -74,16 +79,18 @@ class BoxobanEnv(SokobanEnv):
                     current_map = []
                 if '#' == line[0]:
                     current_map.append(line.strip())
-        
+
         maps.append(current_map)
 
-        selected_map = random.choice(maps)
+        if map_idx is None:
+            selected_map = random.choice(maps)
+        else:
+            selected_map = maps[map_idx]
 
         if self.verbose:
             print('Selected Level from File "{}"'.format(source_file))
 
         self.room_fixed, self.room_state, self.box_mapping = self.generate_room(selected_map)
-
 
     def generate_room(self, select_map):
         room_fixed = []
@@ -123,11 +130,7 @@ class BoxobanEnv(SokobanEnv):
             room_fixed.append(room_f)
             room_state.append(room_s)
 
-
         # used for replay in room generation, unused here because pre-generated levels
         box_mapping = {}
 
         return np.array(room_fixed), np.array(room_state), box_mapping
-
-
-
